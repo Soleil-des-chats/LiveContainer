@@ -265,6 +265,7 @@
 				LCStatusBarManager.h,
 				LCStatusBarManager.m,
 				MultitaskAppWindow.swift,
+				DesktopShell.swift,
 				MultitaskDockView.swift,
 				MultitaskManager.swift,
 				PiPManager.h,

@@ -147,6 +147,7 @@ class LCAppModel: ObservableObject, Hashable {
     public var shouldLaunchInMultitaskMode : Bool {
         get {
             if #available(iOS 16.0, *) {
+                if DesktopShell.isEnabled { return true }
                 return uiIsMultitaskModeSpecificed == .yes ||
                 (uiIsMultitaskModeSpecificed == .default && UserDefaults.standard.bool(forKey: "LCLaunchInMultitaskMode"))
             } else {
@@ -233,7 +234,9 @@ class LCAppModel: ObservableObject, Hashable {
         let currentDataFolder = containerFolderName ?? uiSelectedContainer?.folderName
         
         let classicMode = appInfo.defaultClassicMode
-        let multitask = classicMode == 0 ? (multitask ?? shouldLaunchInMultitaskMode) : false
+        var desktopForced = false
+        if #available(iOS 16.0, *) { desktopForced = DesktopShell.isEnabled }
+        let multitask = classicMode == 0 ? (desktopForced || (multitask ?? shouldLaunchInMultitaskMode)) : false
         
         if MultitaskManager.isMultitasking() || multitask,
            let currentDataFolder {

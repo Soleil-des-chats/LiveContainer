@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct LCMultitaskSettingView: View {
+    @AppStorage("LCDesktopMode", store: LCUtils.appGroupUserDefault) var desktopMode = false
     @AppStorage("LCMultitaskMode", store: LCUtils.appGroupUserDefault) var multitaskMode: MultitaskMode = .virtualWindow
     @AppStorage("LCLaunchInMultitaskMode") var launchInMultitaskMode = false
     @AppStorage("LCLaunchMultitaskMaximized") var launchMultitaskMaximized = false
@@ -22,6 +23,19 @@ struct LCMultitaskSettingView: View {
     
     var body: some View {
         List {
+            if #available(iOS 16.0, *) {
+                Section {
+                    Toggle(isOn: Binding(get: { desktopMode }, set: { on in
+                        desktopMode = on
+                        if on { multitaskMode = .virtualWindow; DesktopShell.shared.activate() }
+                        else { DesktopShell.shared.deactivate() }
+                    })) {
+                        Text("Desktop Mode")
+                    }
+                } footer: {
+                    Text("Shows a desktop with a start menu and taskbar. Every app opens in its own window.")
+                }
+            }
             Section {
                 if(UIApplication.shared.supportsMultipleScenes) {
                     Picker(selection: $multitaskMode) {

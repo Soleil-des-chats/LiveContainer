@@ -95,6 +95,7 @@ struct LCTabView: View {
             }
         }
         .task {
+            if #available(iOS 16.0, *) { DesktopShell.shared.activateIfNeeded() }
             closeDuplicatedWindow()
             checkLastLaunchError()
             checkTeamId()

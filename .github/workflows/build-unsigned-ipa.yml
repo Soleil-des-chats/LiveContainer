@@ -1,0 +1,59 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      scheme: LiveContainer
+      archive_path: archive
+    steps:
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.2'
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # If this repo was created from a source zip, the submodule folders are empty.
+      # Fetch them at the commits LiveContainer pins.
+      - name: Ensure submodules are present
+        run: |
+          fetch() { # dir url commit
+            if [ -z "$(ls -A "$1" 2>/dev/null)" ]; then
+              rm -rf "$1"
+              git clone "$2" "$1"
+              git -C "$1" checkout "$3"
+            fi
+          }
+          fetch OpenSSL https://github.com/krzyzanowskim/OpenSSL 623c84da314e85363236507ca38a4bde65df21c3
+          fetch litehook https://github.com/LiveContainer/litehook a7e9f599d7f0b3d77008ad62bf10cb10dab6eca9
+          if [ ! -d fishhook ] && grep -q fishhook .gitmodules; then
+            git clone https://github.com/LiveContainer/fishhook fishhook
+          fi
+
+      - name: Archive (no code signing)
+        run: |
+          xcodebuild archive \
+            -archivePath "$archive_path" \
+            -scheme "$scheme" \
+            -project LiveContainer.xcodeproj \
+            -sdk iphoneos -arch arm64 -configuration Release \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | xcpretty && exit ${PIPESTATUS[0]}
+
+      - name: Package unsigned IPA
+        run: |
+          mv "$archive_path.xcarchive/Products/Applications" Payload
+          zip -qr "$scheme-Desktop-unsigned.ipa" Payload -x "._*" -x ".DS_Store" -x "__MACOSX"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.scheme }}-Desktop-unsigned.ipa
+          path: ${{ env.scheme }}-Desktop-unsigned.ipa

@@ -84,7 +84,12 @@
         // Wire PID callback
         launcherView.pidAvailableHandler = completionHandler;
         launcherView.view.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleBottomMargin;
-        launcherView.view.center = rootVC.view.center;
+        if (DesktopShell.isActive) {
+            [DesktopShell.shared placeNewWindow:launcherView.view];
+            [launcherView updateOriginalFrame];
+        } else {
+            launcherView.view.center = rootVC.view.center;
+        }
     });
 }
 

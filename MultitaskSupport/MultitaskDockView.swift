@@ -447,7 +447,7 @@ class AppInfoProvider {
     }
     
     @objc public func showDock() {
-        guard isDockEnabled() else { return }
+        guard isDockEnabled(), !DesktopShell.isEnabled else { return }
         guard !isVisible, let hostingController = hostingController else { return }
         
         guard let keyWindow = self.keyWindow else { return }

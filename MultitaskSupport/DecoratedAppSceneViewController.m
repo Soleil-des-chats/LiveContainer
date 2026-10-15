@@ -102,7 +102,7 @@
     frame.origin = CGPointMake(rootViewCenter.x - frame.size.width / 2, rootViewCenter.y - frame.size.height / 2);
     
     if(_isMaximized) {
-        CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, self.view.window.safeAreaInsets);
+        CGRect maxFrame = [self usableFrame];
         // save origin as normalized coordinates
         frame.origin.x /= maxFrame.size.width;
         frame.origin.y /= maxFrame.size.height;
@@ -147,6 +147,10 @@
     moveGesture.minimumNumberOfTouches = 1;
     moveGesture.maximumNumberOfTouches = 1;
     [self.navigationBar addGestureRecognizer:moveGesture];
+    
+    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(maximizeWindow)];
+    doubleTap.numberOfTapsRequired = 2;
+    [self.navigationBar addGestureRecognizer:doubleTap];
 
     // Resize handle (idea stolen from Notes debugging window)
     UIPanGestureRecognizer *resizeGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(resizeWindow:)];
@@ -284,7 +288,7 @@
         updateSettingsBlock = ^(UIMutableApplicationSceneSettings *settings) {
             [self updateWindowedFrameWithSettings:settings];
         };
-        CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, self.view.window.safeAreaInsets);
+        CGRect maxFrame = [self usableFrame];
         CGRect newFrame = CGRectMake(self.originalFrame.origin.x * maxFrame.size.width, self.originalFrame.origin.y * maxFrame.size.height, self.originalFrame.size.width, self.originalFrame.size.height);
         [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
             self.view.frame = newFrame;
@@ -465,6 +469,37 @@
     [sender setTranslation:CGPointZero inView:self.view];
 
     self.view.center = CGPointMake(self.view.center.x + point.x, self.view.center.y + point.y);
+    
+    if([self isDesktopActive]) {
+        // keep the title bar reachable (not under the taskbar / above the screen)
+        CGRect area = [DesktopShell.shared usableFrame];
+        CGRect f = self.view.frame;
+        f.origin.y = MAX(area.origin.y, MIN(f.origin.y, CGRectGetMaxY(area) - 44));
+        f.origin.x = MAX(area.origin.x - f.size.width + 80, MIN(f.origin.x, CGRectGetMaxX(area) - 80));
+        self.view.frame = f;
+        
+        NSInteger zone = [DesktopShell.shared snapZoneAtPoint:[sender locationInView:self.view.window]];
+        if(sender.state == UIGestureRecognizerStateChanged || sender.state == UIGestureRecognizerStateBegan) {
+            [DesktopShell.shared showSnapPreviewWithZone:zone];
+        } else if(sender.state == UIGestureRecognizerStateEnded) {
+            [DesktopShell.shared hideSnapPreview];
+            [self updateOriginalFrame];
+            if(zone == 3) {
+                [self maximizeWindow];
+            } else if(zone == 1 || zone == 2) {
+                CGRect target = [DesktopShell.shared snapRectWithZone:zone];
+                [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+                    self.view.frame = target;
+                    [self.view layoutIfNeeded];
+                } completion:^(BOOL finished) {
+                    [self updateOriginalFrame];
+                }];
+            }
+            return;
+        } else if(sender.state == UIGestureRecognizerStateCancelled || sender.state == UIGestureRecognizerStateFailed) {
+            [DesktopShell.shared hideSnapPreview];
+        }
+    }
     [self updateOriginalFrame];
 }
 
@@ -477,6 +512,11 @@
     CGRect frame = self.view.frame;
     frame.size.width = MAX(50, frame.size.width + point.x);
     frame.size.height = MAX(50, frame.size.height + point.y);
+    if([self isDesktopActive]) {
+        CGRect area = [DesktopShell.shared usableFrame];
+        frame.size.width = MAX(160, MIN(frame.size.width, CGRectGetMaxX(area) - frame.origin.x + 40));
+        frame.size.height = MAX(160, MIN(frame.size.height, CGRectGetMaxY(area) - frame.origin.y));
+    }
     self.view.frame = frame;
     [self updateOriginalFrame];
 }
@@ -528,6 +568,7 @@
 - (UIEdgeInsets)updateMaximizedSafeAreaWithSettings:(UIMutableApplicationSceneSettings *)settings {
     BOOL bottomWindowBar = [NSUserDefaults.lcSharedDefaults boolForKey:@"LCMultitaskBottomWindowBar"];
     UIEdgeInsets safeAreaInsets = self.view.window.safeAreaInsets;
+    if([self isDesktopActive]) safeAreaInsets.bottom = 0; // taskbar covers the home indicator area
     if(self.navigationBar.hidden) {
         settings.peripheryInsets = safeAreaInsets;
         safeAreaInsets = UIEdgeInsetsZero;
@@ -560,12 +601,15 @@
 
 - (void)updateMaximizedFrameWithSettings:(UIMutableApplicationSceneSettings *)settings {
     CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, [self updateMaximizedSafeAreaWithSettings:settings]);
+    if([self isDesktopActive]) {
+        // keep clear of the taskbar
+        maxFrame.size.height -= DesktopShell.taskbarTotalHeight;
+    }
     self.view.frame = maxFrame;
 }
 
 - (void)updateWindowedFrameWithSettings:(UIMutableApplicationSceneSettings *)settings {
-    UIEdgeInsets safeAreaInsets = self.view.window.safeAreaInsets;
-    CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, safeAreaInsets);
+    CGRect maxFrame = [self usableFrame];
     settings.peripheryInsets = UIEdgeInsetsZero;
     settings.safeAreaInsetsPortrait = UIEdgeInsetsZero;
     
@@ -582,9 +626,23 @@
     }];
 }
 
+- (BOOL)isDesktopActive {
+    if (@available(iOS 16.0, *)) {
+        return DesktopShell.isActive;
+    }
+    return NO;
+}
+
+- (CGRect)usableFrame {
+    if([self isDesktopActive]) {
+        return [DesktopShell.shared usableFrame];
+    }
+    return UIEdgeInsetsInsetRect(self.view.window.frame, self.view.window.safeAreaInsets);
+}
+
 - (void)updateOriginalFrame {
     if(_isMaximized) return;
-    CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, self.view.window.safeAreaInsets);
+    CGRect maxFrame = [self usableFrame];
     // save origin as normalized coordinates
     self.originalFrame = CGRectMake(self.view.frame.origin.x / maxFrame.size.width, self.view.frame.origin.y / maxFrame.size.height, self.view.frame.size.width, self.view.frame.size.height);
 }
